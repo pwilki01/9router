@@ -8,6 +8,9 @@ import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamH
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
+import { isStreamableUpstreamContentType } from "../../utils/streamableContentType.js";
+
+export { isStreamableUpstreamContentType };
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -59,13 +62,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // return a clean JSON error instead. The message is stripped of HTML tags
   // and clamped so untrusted upstream text never reaches the client verbatim
   // (the UI may render error.message as HTML).
-  const upstreamContentType = (providerResponse.headers.get('content-type') || '').toLowerCase();
-  if (upstreamContentType && !upstreamContentType.includes('text/event-stream') && !upstreamContentType.includes('application/json')) {
-    const bodyText = await providerResponse.text().catch(() => '');
+  const upstreamContentType = (providerResponse.headers.get("content-type") || "").toLowerCase();
+  if (upstreamContentType && !isStreamableUpstreamContentType(upstreamContentType)) {
+    const bodyText = await providerResponse.text().catch(() => "");
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
-    const sanitizedTitle = (titleMatch?.[1] || '').replace(/<[^>]*>/g, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
+    const sanitizedTitle = (titleMatch?.[1] || "").replace(/<[^>]*>/g, "").replace(/[\r\n]+/g, " ").trim().slice(0, 160);
     const shortMsg = sanitizedTitle
-      || (bodyText.length < 200 ? bodyText.replace(/<[^>]*>/g, '').trim().slice(0, 160) : `Upstream returned non-SSE response (${upstreamContentType})`);
+      || (bodyText.length < 200 ? bodyText.replace(/<[^>]*>/g, "").trim().slice(0, 160) : `Upstream returned non-SSE response (${upstreamContentType})`);
     const status = providerResponse.status || 502;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · non-SSE (${upstreamContentType})\n    ${shortMsg}`);
     else console.warn(`[STREAM] ${provider} | ${model} | blocked pipe: ${shortMsg} [${status}]`);
@@ -74,7 +77,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       success: false,
       response: new Response(JSON.stringify({ error: { message: `[${status}]: ${shortMsg}` } }), {
         status,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
       }),
     };
   }

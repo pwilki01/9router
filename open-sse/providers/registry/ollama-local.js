@@ -3,6 +3,8 @@ export default {
   priority: 50,
   hasFree: true,
   alias: "ollama-local",
+  // Loopback Ollama needs no credential — avoids Authorization: Bearer undefined.
+  noAuth: true,
   display: {
     name: "Ollama Local",
     icon: "cloud",
