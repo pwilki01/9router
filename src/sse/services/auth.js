@@ -264,6 +264,26 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+
+  // Local Ollama is a single on-box connection, not a quota pool. Locking it for
+  // 30s after a stream/content-type blip just bricks the only available path.
+  if (resolveProviderId(provider) === "ollama-local") {
+    await updateProviderConnection(connectionId, {
+      lastError: reason,
+      errorCode: status,
+      lastErrorAt: new Date().toISOString(),
+      // Keep connection usable; do not set testStatus/modelLock_*.
+      testStatus: "active",
+      backoffLevel: 0,
+    });
+    log.warn("AUTH", `${connName} ollama-local error recorded without model lock [${status}]`);
+    if (provider && status && reason) {
+      console.error(`❌ ${provider} [${status}]: ${reason}`);
+    }
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
+
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
@@ -276,7 +296,6 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   });
 
   const lockKey = Object.keys(lockUpdate)[0];
-  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
 
   if (provider && status && reason) {
